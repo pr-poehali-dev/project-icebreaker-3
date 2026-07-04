@@ -32,7 +32,7 @@ export default function Login() {
       localStorage.setItem('auth_token', data.token)
       localStorage.setItem('auth_user', JSON.stringify(data.user))
       toast({ title: 'С возвращением!', description: `Вы вошли как ${data.user.username}` })
-      navigate('/')
+      navigate('/channel')
     } catch {
       toast({ variant: 'destructive', title: 'Ошибка', description: 'Не удалось подключиться к серверу' })
     } finally {

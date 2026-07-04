@@ -33,7 +33,7 @@ export default function Register() {
       localStorage.setItem('auth_token', data.token)
       localStorage.setItem('auth_user', JSON.stringify(data.user))
       toast({ title: 'Добро пожаловать!', description: 'Аккаунт успешно создан' })
-      navigate('/')
+      navigate('/channel')
     } catch {
       toast({ variant: 'destructive', title: 'Ошибка', description: 'Не удалось подключиться к серверу' })
     } finally {
