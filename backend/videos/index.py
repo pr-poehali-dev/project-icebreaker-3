@@ -9,11 +9,11 @@ import psycopg2
 def get_user_from_token(cur, token: str):
     if not token:
         return None
-    token_esc = token.replace("'", "''")
     cur.execute(
         "SELECT u.id, u.email, u.username FROM sessions s "
         "JOIN users u ON u.id = s.user_id "
-        "WHERE s.token = '%s' AND s.expires_at > NOW()" % token_esc
+        "WHERE s.token = %s AND s.expires_at > NOW()",
+        (token,)
     )
     row = cur.fetchone()
     if not row:
@@ -99,13 +99,10 @@ def handler(event: dict, context) -> dict:
             if cover_base64:
                 cover_url = upload_to_s3(cover_base64, 'covers', cover_filename, cover_content_type)
 
-            title_esc = title.replace("'", "''")
-            desc_esc = description.replace("'", "''")
             cur.execute(
                 "INSERT INTO videos (user_id, title, description, video_url, cover_url) "
-                "VALUES (%s, '%s', '%s', '%s', '%s') RETURNING id, created_at" % (
-                    user['id'], title_esc, desc_esc, video_url, cover_url
-                )
+                "VALUES (%s, %s, %s, %s, %s) RETURNING id, created_at",
+                (user['id'], title, description, video_url, cover_url)
             )
             video_id, created_at = cur.fetchone()
 
@@ -134,12 +131,13 @@ def handler(event: dict, context) -> dict:
                 "u.id, u.username, "
                 "(SELECT COUNT(*) FROM likes l WHERE l.video_id = v.id) "
                 "FROM videos v JOIN users u ON u.id = v.user_id "
-                "WHERE v.user_id = %s ORDER BY v.created_at DESC" % user['id']
+                "WHERE v.user_id = %s ORDER BY v.created_at DESC",
+                (user['id'],)
             )
             rows = cur.fetchall()
             videos = [video_row_to_dict(r) for r in rows]
 
-            cur.execute("SELECT COUNT(*) FROM subscriptions WHERE channel_id = %s" % user['id'])
+            cur.execute("SELECT COUNT(*) FROM subscriptions WHERE channel_id = %s", (user['id'],))
             subscribers_count = cur.fetchone()[0]
 
             return {
@@ -170,7 +168,8 @@ def handler(event: dict, context) -> dict:
                 "SELECT v.id, v.title, v.description, v.video_url, v.cover_url, v.views, v.created_at, "
                 "u.id, u.username, "
                 "(SELECT COUNT(*) FROM likes l WHERE l.video_id = v.id) "
-                "FROM videos v JOIN users u ON u.id = v.user_id WHERE v.id = %s" % video_id
+                "FROM videos v JOIN users u ON u.id = v.user_id WHERE v.id = %s",
+                (video_id,)
             )
             row = cur.fetchone()
             if not row:
@@ -179,7 +178,7 @@ def handler(event: dict, context) -> dict:
             video = video_row_to_dict(row)
             author_id = row[7]
 
-            cur.execute("SELECT COUNT(*) FROM subscriptions WHERE channel_id = %s" % author_id)
+            cur.execute("SELECT COUNT(*) FROM subscriptions WHERE channel_id = %s", (author_id,))
             video['author']['subscribers_count'] = cur.fetchone()[0]
 
             user = get_user_from_token(cur, token)
@@ -187,11 +186,13 @@ def handler(event: dict, context) -> dict:
             video['is_subscribed'] = False
             if user:
                 cur.execute(
-                    "SELECT 1 FROM likes WHERE user_id = %s AND video_id = %s" % (user['id'], video_id)
+                    "SELECT 1 FROM likes WHERE user_id = %s AND video_id = %s",
+                    (user['id'], video_id)
                 )
                 video['is_liked'] = cur.fetchone() is not None
                 cur.execute(
-                    "SELECT 1 FROM subscriptions WHERE subscriber_id = %s AND channel_id = %s" % (user['id'], author_id)
+                    "SELECT 1 FROM subscriptions WHERE subscriber_id = %s AND channel_id = %s",
+                    (user['id'], author_id)
                 )
                 video['is_subscribed'] = cur.fetchone() is not None
 
@@ -216,7 +217,7 @@ def handler(event: dict, context) -> dict:
             if not channel_id.isdigit():
                 return {'statusCode': 400, 'headers': headers, 'body': json.dumps({'error': 'Некорректный id канала'})}
 
-            cur.execute("SELECT id, username FROM users WHERE id = %s" % channel_id)
+            cur.execute("SELECT id, username FROM users WHERE id = %s", (channel_id,))
             row = cur.fetchone()
             if not row:
                 return {'statusCode': 404, 'headers': headers, 'body': json.dumps({'error': 'Канал не найден'})}
@@ -227,18 +228,20 @@ def handler(event: dict, context) -> dict:
                 "u.id, u.username, "
                 "(SELECT COUNT(*) FROM likes l WHERE l.video_id = v.id) "
                 "FROM videos v JOIN users u ON u.id = v.user_id "
-                "WHERE v.user_id = %s ORDER BY v.created_at DESC" % channel_id
+                "WHERE v.user_id = %s ORDER BY v.created_at DESC",
+                (channel_id,)
             )
             videos = [video_row_to_dict(r) for r in cur.fetchall()]
 
-            cur.execute("SELECT COUNT(*) FROM subscriptions WHERE channel_id = %s" % channel_id)
+            cur.execute("SELECT COUNT(*) FROM subscriptions WHERE channel_id = %s", (channel_id,))
             subscribers_count = cur.fetchone()[0]
 
             is_subscribed = False
             user = get_user_from_token(cur, token)
             if user:
                 cur.execute(
-                    "SELECT 1 FROM subscriptions WHERE subscriber_id = %s AND channel_id = %s" % (user['id'], channel_id)
+                    "SELECT 1 FROM subscriptions WHERE subscriber_id = %s AND channel_id = %s",
+                    (user['id'], channel_id)
                 )
                 is_subscribed = cur.fetchone() is not None
 
@@ -258,7 +261,7 @@ def handler(event: dict, context) -> dict:
             if not video_id.isdigit():
                 return {'statusCode': 400, 'headers': headers, 'body': json.dumps({'error': 'Некорректный id видео'})}
 
-            cur.execute("UPDATE videos SET views = views + 1 WHERE id = %s RETURNING views" % video_id)
+            cur.execute("UPDATE videos SET views = views + 1 WHERE id = %s RETURNING views", (video_id,))
             row = cur.fetchone()
             if not row:
                 return {'statusCode': 404, 'headers': headers, 'body': json.dumps({'error': 'Видео не найдено'})}
@@ -274,17 +277,17 @@ def handler(event: dict, context) -> dict:
             if not video_id.isdigit():
                 return {'statusCode': 400, 'headers': headers, 'body': json.dumps({'error': 'Некорректный id видео'})}
 
-            cur.execute("SELECT 1 FROM likes WHERE user_id = %s AND video_id = %s" % (user['id'], video_id))
+            cur.execute("SELECT 1 FROM likes WHERE user_id = %s AND video_id = %s", (user['id'], video_id))
             already_liked = cur.fetchone() is not None
 
             if already_liked:
-                cur.execute("DELETE FROM likes WHERE user_id = %s AND video_id = %s" % (user['id'], video_id))
+                cur.execute("DELETE FROM likes WHERE user_id = %s AND video_id = %s", (user['id'], video_id))
                 liked = False
             else:
-                cur.execute("INSERT INTO likes (user_id, video_id) VALUES (%s, %s)" % (user['id'], video_id))
+                cur.execute("INSERT INTO likes (user_id, video_id) VALUES (%s, %s)", (user['id'], video_id))
                 liked = True
 
-            cur.execute("SELECT COUNT(*) FROM likes WHERE video_id = %s" % video_id)
+            cur.execute("SELECT COUNT(*) FROM likes WHERE video_id = %s", (video_id,))
             likes_count = cur.fetchone()[0]
 
             return {'statusCode': 200, 'headers': headers, 'body': json.dumps({'liked': liked, 'likes_count': likes_count})}
@@ -302,22 +305,25 @@ def handler(event: dict, context) -> dict:
                 return {'statusCode': 400, 'headers': headers, 'body': json.dumps({'error': 'Нельзя подписаться на себя'})}
 
             cur.execute(
-                "SELECT 1 FROM subscriptions WHERE subscriber_id = %s AND channel_id = %s" % (user['id'], channel_id)
+                "SELECT 1 FROM subscriptions WHERE subscriber_id = %s AND channel_id = %s",
+                (user['id'], channel_id)
             )
             already_subscribed = cur.fetchone() is not None
 
             if already_subscribed:
                 cur.execute(
-                    "DELETE FROM subscriptions WHERE subscriber_id = %s AND channel_id = %s" % (user['id'], channel_id)
+                    "DELETE FROM subscriptions WHERE subscriber_id = %s AND channel_id = %s",
+                    (user['id'], channel_id)
                 )
                 subscribed = False
             else:
                 cur.execute(
-                    "INSERT INTO subscriptions (subscriber_id, channel_id) VALUES (%s, %s)" % (user['id'], channel_id)
+                    "INSERT INTO subscriptions (subscriber_id, channel_id) VALUES (%s, %s)",
+                    (user['id'], channel_id)
                 )
                 subscribed = True
 
-            cur.execute("SELECT COUNT(*) FROM subscriptions WHERE channel_id = %s" % channel_id)
+            cur.execute("SELECT COUNT(*) FROM subscriptions WHERE channel_id = %s", (channel_id,))
             subscribers_count = cur.fetchone()[0]
 
             return {

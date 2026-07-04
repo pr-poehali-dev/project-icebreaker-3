@@ -56,25 +56,22 @@ def handler(event: dict, context) -> dict:
             if not username:
                 return {'statusCode': 400, 'headers': headers, 'body': json.dumps({'error': 'Укажите имя пользователя'})}
 
-            cur.execute("SELECT id FROM users WHERE email = %s" % ("'" + email.replace("'", "''") + "'"))
+            cur.execute("SELECT id FROM users WHERE email = %s", (email,))
             if cur.fetchone():
                 return {'statusCode': 409, 'headers': headers, 'body': json.dumps({'error': 'Пользователь с таким email уже существует'})}
 
             password_hash = hash_password(password)
-            username_esc = username.replace("'", "''")
             cur.execute(
-                "INSERT INTO users (email, password_hash, username) VALUES ('%s', '%s', '%s') RETURNING id, email, username" % (
-                    email, password_hash, username_esc
-                )
+                "INSERT INTO users (email, password_hash, username) VALUES (%s, %s, %s) RETURNING id, email, username",
+                (email, password_hash, username)
             )
             user_id, user_email, user_username = cur.fetchone()
 
             token = secrets_lib.token_hex(32)
             expires_at = datetime.utcnow() + timedelta(days=30)
             cur.execute(
-                "INSERT INTO sessions (user_id, token, expires_at) VALUES (%s, '%s', '%s')" % (
-                    user_id, token, expires_at.isoformat()
-                )
+                "INSERT INTO sessions (user_id, token, expires_at) VALUES (%s, %s, %s)",
+                (user_id, token, expires_at.isoformat())
             )
 
             return {
@@ -94,11 +91,9 @@ def handler(event: dict, context) -> dict:
                 return {'statusCode': 400, 'headers': headers, 'body': json.dumps({'error': 'Введите email и пароль'})}
 
             password_hash = hash_password(password)
-            email_esc = email.replace("'", "''")
             cur.execute(
-                "SELECT id, email, username FROM users WHERE email = '%s' AND password_hash = '%s'" % (
-                    email_esc, password_hash
-                )
+                "SELECT id, email, username FROM users WHERE email = %s AND password_hash = %s",
+                (email, password_hash)
             )
             row = cur.fetchone()
             if not row:
@@ -108,9 +103,8 @@ def handler(event: dict, context) -> dict:
             token = secrets_lib.token_hex(32)
             expires_at = datetime.utcnow() + timedelta(days=30)
             cur.execute(
-                "INSERT INTO sessions (user_id, token, expires_at) VALUES (%s, '%s', '%s')" % (
-                    user_id, token, expires_at.isoformat()
-                )
+                "INSERT INTO sessions (user_id, token, expires_at) VALUES (%s, %s, %s)",
+                (user_id, token, expires_at.isoformat())
             )
 
             return {
@@ -129,11 +123,11 @@ def handler(event: dict, context) -> dict:
             if not token:
                 return {'statusCode': 401, 'headers': headers, 'body': json.dumps({'error': 'Требуется авторизация'})}
 
-            token_esc = token.replace("'", "''")
             cur.execute(
                 "SELECT u.id, u.email, u.username FROM sessions s "
                 "JOIN users u ON u.id = s.user_id "
-                "WHERE s.token = '%s' AND s.expires_at > NOW()" % token_esc
+                "WHERE s.token = %s AND s.expires_at > NOW()",
+                (token,)
             )
             row = cur.fetchone()
             if not row:
