@@ -6,7 +6,8 @@ export const sections = [
     subtitle: <Badge variant="outline" className="text-white border-white">Бета-доступ открыт</Badge>,
     title: "Смотри и делись видео.",
     showButton: true,
-    buttonText: 'Начать бесплатно'
+    buttonText: 'Начать бесплатно',
+    buttonLink: '/register'
   },
   {
     id: 'about',
@@ -28,6 +29,7 @@ export const sections = [
     title: 'Загрузи первое видео',
     content: 'Готов показать себя миру? Создай канал, загрузи ролик и начни собирать просмотры уже сегодня.',
     showButton: true,
-    buttonText: 'Загрузить видео'
+    buttonText: 'Загрузить видео',
+    buttonLink: '/register'
   },
 ]
