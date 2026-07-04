@@ -47,7 +47,7 @@ export default function Register() {
         <div className="text-center mb-8">
           <Link to="/" className="inline-flex items-center gap-2 text-white text-2xl font-bold mb-2">
             <Icon name="Play" className="text-[#FF4D00]" size={28} />
-            VideoHub
+            PLAYER TUBE
           </Link>
           <p className="text-neutral-400">Создайте аккаунт и начните делиться видео</p>
         </div>

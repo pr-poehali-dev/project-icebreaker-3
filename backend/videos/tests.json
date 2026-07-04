@@ -19,6 +19,36 @@
       "method": "GET",
       "path": "/?action=list",
       "expectedStatus": 200
+    },
+    {
+      "name": "Authors list",
+      "method": "GET",
+      "path": "/?action=authors",
+      "expectedStatus": 200
+    },
+    {
+      "name": "Get missing video",
+      "method": "GET",
+      "path": "/?action=get&id=999999",
+      "expectedStatus": 404,
+      "expectedBody": {"error": "string"},
+      "bodyMatcher": "partial"
+    },
+    {
+      "name": "Like without token",
+      "method": "POST",
+      "path": "/?action=like&id=1",
+      "expectedStatus": 401,
+      "expectedBody": {"error": "string"},
+      "bodyMatcher": "partial"
+    },
+    {
+      "name": "Subscribe without token",
+      "method": "POST",
+      "path": "/?action=subscribe&channel_id=1",
+      "expectedStatus": 401,
+      "expectedBody": {"error": "string"},
+      "bodyMatcher": "partial"
     }
   ]
 }

@@ -35,8 +35,17 @@ def upload_to_s3(base64_data: str, folder: str, filename: str, content_type: str
     return f"https://cdn.poehali.dev/projects/{os.environ['AWS_ACCESS_KEY_ID']}/bucket/{key}"
 
 
+def video_row_to_dict(r):
+    return {
+        'id': r[0], 'title': r[1], 'description': r[2], 'video_url': r[3],
+        'cover_url': r[4], 'views': r[5], 'created_at': r[6].isoformat(),
+        'author': {'id': r[7], 'username': r[8]},
+        'likes_count': r[9]
+    }
+
+
 def handler(event: dict, context) -> dict:
-    '''Загрузка видео пользователями и получение списков видео: своего канала, конкретного пользователя или общей ленты'''
+    '''Видео-платформа PLAYER TUBE: загрузка видео, лента, детали видео, лайки, подписки на авторов, просмотры'''
     method: str = event.get('httpMethod', 'GET')
 
     if method == 'OPTIONS':
@@ -121,35 +130,201 @@ def handler(event: dict, context) -> dict:
                 return {'statusCode': 401, 'headers': headers, 'body': json.dumps({'error': 'Требуется авторизация'})}
 
             cur.execute(
-                "SELECT id, title, description, video_url, cover_url, views, created_at "
-                "FROM videos WHERE user_id = %s ORDER BY created_at DESC" % user['id']
+                "SELECT v.id, v.title, v.description, v.video_url, v.cover_url, v.views, v.created_at, "
+                "u.id, u.username, "
+                "(SELECT COUNT(*) FROM likes l WHERE l.video_id = v.id) "
+                "FROM videos v JOIN users u ON u.id = v.user_id "
+                "WHERE v.user_id = %s ORDER BY v.created_at DESC" % user['id']
             )
             rows = cur.fetchall()
-            videos = [{
-                'id': r[0], 'title': r[1], 'description': r[2], 'video_url': r[3],
-                'cover_url': r[4], 'views': r[5], 'created_at': r[6].isoformat()
-            } for r in rows]
+            videos = [video_row_to_dict(r) for r in rows]
+
+            cur.execute("SELECT COUNT(*) FROM subscriptions WHERE channel_id = %s" % user['id'])
+            subscribers_count = cur.fetchone()[0]
 
             return {
                 'statusCode': 200,
                 'headers': headers,
-                'body': json.dumps({'user': user, 'videos': videos})
+                'body': json.dumps({'user': user, 'videos': videos, 'subscribers_count': subscribers_count})
             }
 
         if method == 'GET' and action == 'list':
             cur.execute(
                 "SELECT v.id, v.title, v.description, v.video_url, v.cover_url, v.views, v.created_at, "
-                "u.id, u.username FROM videos v JOIN users u ON u.id = v.user_id "
-                "ORDER BY v.created_at DESC LIMIT 50"
+                "u.id, u.username, "
+                "(SELECT COUNT(*) FROM likes l WHERE l.video_id = v.id) "
+                "FROM videos v JOIN users u ON u.id = v.user_id "
+                "ORDER BY v.created_at DESC LIMIT 100"
             )
             rows = cur.fetchall()
-            videos = [{
-                'id': r[0], 'title': r[1], 'description': r[2], 'video_url': r[3],
-                'cover_url': r[4], 'views': r[5], 'created_at': r[6].isoformat(),
-                'author': {'id': r[7], 'username': r[8]}
-            } for r in rows]
+            videos = [video_row_to_dict(r) for r in rows]
 
             return {'statusCode': 200, 'headers': headers, 'body': json.dumps({'videos': videos})}
+
+        if method == 'GET' and action == 'get':
+            video_id = params.get('id', '')
+            if not video_id.isdigit():
+                return {'statusCode': 400, 'headers': headers, 'body': json.dumps({'error': 'Некорректный id видео'})}
+
+            cur.execute(
+                "SELECT v.id, v.title, v.description, v.video_url, v.cover_url, v.views, v.created_at, "
+                "u.id, u.username, "
+                "(SELECT COUNT(*) FROM likes l WHERE l.video_id = v.id) "
+                "FROM videos v JOIN users u ON u.id = v.user_id WHERE v.id = %s" % video_id
+            )
+            row = cur.fetchone()
+            if not row:
+                return {'statusCode': 404, 'headers': headers, 'body': json.dumps({'error': 'Видео не найдено'})}
+
+            video = video_row_to_dict(row)
+            author_id = row[7]
+
+            cur.execute("SELECT COUNT(*) FROM subscriptions WHERE channel_id = %s" % author_id)
+            video['author']['subscribers_count'] = cur.fetchone()[0]
+
+            user = get_user_from_token(cur, token)
+            video['is_liked'] = False
+            video['is_subscribed'] = False
+            if user:
+                cur.execute(
+                    "SELECT 1 FROM likes WHERE user_id = %s AND video_id = %s" % (user['id'], video_id)
+                )
+                video['is_liked'] = cur.fetchone() is not None
+                cur.execute(
+                    "SELECT 1 FROM subscriptions WHERE subscriber_id = %s AND channel_id = %s" % (user['id'], author_id)
+                )
+                video['is_subscribed'] = cur.fetchone() is not None
+
+            return {'statusCode': 200, 'headers': headers, 'body': json.dumps({'video': video})}
+
+        if method == 'GET' and action == 'authors':
+            cur.execute(
+                "SELECT u.id, u.username, "
+                "(SELECT COUNT(*) FROM videos v WHERE v.user_id = u.id) as video_count, "
+                "(SELECT COUNT(*) FROM subscriptions s WHERE s.channel_id = u.id) as subscribers_count "
+                "FROM users u ORDER BY video_count DESC"
+            )
+            rows = cur.fetchall()
+            authors = [{
+                'id': r[0], 'username': r[1], 'video_count': r[2], 'subscribers_count': r[3]
+            } for r in rows]
+
+            return {'statusCode': 200, 'headers': headers, 'body': json.dumps({'authors': authors})}
+
+        if method == 'GET' and action == 'channel':
+            channel_id = params.get('id', '')
+            if not channel_id.isdigit():
+                return {'statusCode': 400, 'headers': headers, 'body': json.dumps({'error': 'Некорректный id канала'})}
+
+            cur.execute("SELECT id, username FROM users WHERE id = %s" % channel_id)
+            row = cur.fetchone()
+            if not row:
+                return {'statusCode': 404, 'headers': headers, 'body': json.dumps({'error': 'Канал не найден'})}
+            channel_user = {'id': row[0], 'username': row[1]}
+
+            cur.execute(
+                "SELECT v.id, v.title, v.description, v.video_url, v.cover_url, v.views, v.created_at, "
+                "u.id, u.username, "
+                "(SELECT COUNT(*) FROM likes l WHERE l.video_id = v.id) "
+                "FROM videos v JOIN users u ON u.id = v.user_id "
+                "WHERE v.user_id = %s ORDER BY v.created_at DESC" % channel_id
+            )
+            videos = [video_row_to_dict(r) for r in cur.fetchall()]
+
+            cur.execute("SELECT COUNT(*) FROM subscriptions WHERE channel_id = %s" % channel_id)
+            subscribers_count = cur.fetchone()[0]
+
+            is_subscribed = False
+            user = get_user_from_token(cur, token)
+            if user:
+                cur.execute(
+                    "SELECT 1 FROM subscriptions WHERE subscriber_id = %s AND channel_id = %s" % (user['id'], channel_id)
+                )
+                is_subscribed = cur.fetchone() is not None
+
+            return {
+                'statusCode': 200,
+                'headers': headers,
+                'body': json.dumps({
+                    'channel': channel_user,
+                    'videos': videos,
+                    'subscribers_count': subscribers_count,
+                    'is_subscribed': is_subscribed
+                })
+            }
+
+        if method == 'POST' and action == 'view':
+            video_id = params.get('id', '')
+            if not video_id.isdigit():
+                return {'statusCode': 400, 'headers': headers, 'body': json.dumps({'error': 'Некорректный id видео'})}
+
+            cur.execute("UPDATE videos SET views = views + 1 WHERE id = %s RETURNING views" % video_id)
+            row = cur.fetchone()
+            if not row:
+                return {'statusCode': 404, 'headers': headers, 'body': json.dumps({'error': 'Видео не найдено'})}
+
+            return {'statusCode': 200, 'headers': headers, 'body': json.dumps({'views': row[0]})}
+
+        if method == 'POST' and action == 'like':
+            user = get_user_from_token(cur, token)
+            if not user:
+                return {'statusCode': 401, 'headers': headers, 'body': json.dumps({'error': 'Требуется авторизация'})}
+
+            video_id = params.get('id', '')
+            if not video_id.isdigit():
+                return {'statusCode': 400, 'headers': headers, 'body': json.dumps({'error': 'Некорректный id видео'})}
+
+            cur.execute("SELECT 1 FROM likes WHERE user_id = %s AND video_id = %s" % (user['id'], video_id))
+            already_liked = cur.fetchone() is not None
+
+            if already_liked:
+                cur.execute("DELETE FROM likes WHERE user_id = %s AND video_id = %s" % (user['id'], video_id))
+                liked = False
+            else:
+                cur.execute("INSERT INTO likes (user_id, video_id) VALUES (%s, %s)" % (user['id'], video_id))
+                liked = True
+
+            cur.execute("SELECT COUNT(*) FROM likes WHERE video_id = %s" % video_id)
+            likes_count = cur.fetchone()[0]
+
+            return {'statusCode': 200, 'headers': headers, 'body': json.dumps({'liked': liked, 'likes_count': likes_count})}
+
+        if method == 'POST' and action == 'subscribe':
+            user = get_user_from_token(cur, token)
+            if not user:
+                return {'statusCode': 401, 'headers': headers, 'body': json.dumps({'error': 'Требуется авторизация'})}
+
+            channel_id = params.get('channel_id', '')
+            if not channel_id.isdigit():
+                return {'statusCode': 400, 'headers': headers, 'body': json.dumps({'error': 'Некорректный id канала'})}
+
+            if str(user['id']) == channel_id:
+                return {'statusCode': 400, 'headers': headers, 'body': json.dumps({'error': 'Нельзя подписаться на себя'})}
+
+            cur.execute(
+                "SELECT 1 FROM subscriptions WHERE subscriber_id = %s AND channel_id = %s" % (user['id'], channel_id)
+            )
+            already_subscribed = cur.fetchone() is not None
+
+            if already_subscribed:
+                cur.execute(
+                    "DELETE FROM subscriptions WHERE subscriber_id = %s AND channel_id = %s" % (user['id'], channel_id)
+                )
+                subscribed = False
+            else:
+                cur.execute(
+                    "INSERT INTO subscriptions (subscriber_id, channel_id) VALUES (%s, %s)" % (user['id'], channel_id)
+                )
+                subscribed = True
+
+            cur.execute("SELECT COUNT(*) FROM subscriptions WHERE channel_id = %s" % channel_id)
+            subscribers_count = cur.fetchone()[0]
+
+            return {
+                'statusCode': 200,
+                'headers': headers,
+                'body': json.dumps({'subscribed': subscribed, 'subscribers_count': subscribers_count})
+            }
 
         return {'statusCode': 400, 'headers': headers, 'body': json.dumps({'error': 'Неизвестное действие'})}
 

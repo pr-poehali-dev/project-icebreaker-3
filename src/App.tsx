@@ -8,7 +8,10 @@ import Index from "./pages/Index";
 import Login from "./pages/Login";
 import Register from "./pages/Register";
 import Channel from "./pages/Channel";
+import ChannelPublic from "./pages/ChannelPublic";
 import Upload from "./pages/Upload";
+import Watch from "./pages/Watch";
+import Explore from "./pages/Explore";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -24,7 +27,10 @@ const App = () => (
           <Route path="/login" element={<Login />} />
           <Route path="/register" element={<Register />} />
           <Route path="/channel" element={<Channel />} />
+          <Route path="/channel/:id" element={<ChannelPublic />} />
           <Route path="/upload" element={<Upload />} />
+          <Route path="/watch/:id" element={<Watch />} />
+          <Route path="/explore" element={<Explore />} />
           {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
           <Route path="*" element={<NotFound />} />
         </Routes>

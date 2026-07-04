@@ -46,7 +46,7 @@ export default function Login() {
         <div className="text-center mb-8">
           <Link to="/" className="inline-flex items-center gap-2 text-white text-2xl font-bold mb-2">
             <Icon name="Play" className="text-[#FF4D00]" size={28} />
-            VideoHub
+            PLAYER TUBE
           </Link>
           <p className="text-neutral-400">Войдите, чтобы смотреть и загружать видео</p>
         </div>

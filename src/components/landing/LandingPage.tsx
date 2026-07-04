@@ -1,8 +1,10 @@
 import { useEffect, useRef, useState } from 'react'
+import { Link } from 'react-router-dom'
 import { motion, useScroll, useSpring } from 'framer-motion'
 import Section from './Section'
 import Layout from './Layout'
 import { sections } from './sections'
+import { getAuthToken } from '@/hooks/use-auth'
 
 export default function LandingPage() {
   const [activeSection, setActiveSection] = useState(0)
@@ -41,8 +43,23 @@ export default function LandingPage() {
     }
   }
 
+  const isAuthenticated = !!getAuthToken()
+
   return (
     <Layout>
+      <div className="fixed top-0 left-0 right-0 z-30 flex items-center justify-between p-4 md:p-6">
+        <span className="text-white font-bold text-lg tracking-tight">PLAYER TUBE</span>
+        <div className="flex items-center gap-4">
+          <Link to="/explore" className="text-neutral-300 hover:text-white text-sm font-medium transition-colors">
+            Все видео
+          </Link>
+          {isAuthenticated && (
+            <Link to="/channel" className="text-neutral-300 hover:text-white text-sm font-medium transition-colors">
+              Мой канал
+            </Link>
+          )}
+        </div>
+      </div>
       <nav className="fixed top-0 right-0 h-screen flex flex-col justify-center z-30 p-4">
         {sections.map((section, index) => (
           <button
